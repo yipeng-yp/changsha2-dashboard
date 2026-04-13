@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>长沙二区业务监控看板</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-primary:#0f1117;--bg-secondary:#1a1d27;--bg-card:#1e2130;--bg-card-hover:#252840;
+      --border:#2e3250;--text-primary:#e8eaf6;--text-secondary:#9fa8c9;--text-muted:#5c6391;
+      --yellow:#FFC107;--yellow-dim:rgba(255,193,7,.15);--yellow-glow:rgba(255,193,7,.3);
+      --red:#f44336;--red-dim:rgba(244,67,54,.15);
+      --green:#4caf50;--green-dim:rgba(76,175,80,.15);
+      --blue:#42a5f5;--orange:#ff9800;--orange-dim:rgba(255,152,0,.15);
+      --purple:#ab47bc;--purple-dim:rgba(171,71,188,.15);
+      --cyan:#26c6da;--cyan-dim:rgba(38,198,218,.15);
+      --sidebar-w:220px;--sidebar-w-collapsed:60px;
+      --radius:12px;--shadow:0 4px 24px rgba(0,0,0,.4);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg-primary);color:var(--text-primary);font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;min-height:100vh;display:flex;flex-direction:column}
+
+    /* ── Layout ── */
+    .layout{display:flex;flex:1;min-height:0;position:relative}
+
+    /* ── Sidebar ── */
+    .sidebar{width:var(--sidebar-w);background:linear-gradient(180deg,#12152a 0%,#0f1117 100%);border-right:1px solid var(--border);display:flex;flex-direction:column;transition:width .25s ease;flex-shrink:0;position:relative;z-index:50}
+    .sidebar.collapsed{width:var(--sidebar-w-collapsed)}
+    .sidebar-brand{padding:20px 16px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);min-height:68px;overflow:hidden;white-space:nowrap}
+    .brand-logo{width:34px;height:34px;background:var(--yellow);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+    .brand-text{overflow:hidden}
+    .brand-title{font-size:13px;font-weight:700;line-height:1.3}
+    .brand-sub{font-size:11px;color:var(--text-muted);margin-top:2px}
+    .sidebar.collapsed .brand-text{display:none}
+    .sidebar-nav{flex:1;padding:10px 8px;overflow-y:auto}
+    .nav-item{display:flex;align-items:center;gap:10px;padding:10px 10px;border-radius:9px;cursor:pointer;transition:background .18s,color .18s;margin-bottom:3px;position:relative;white-space:nowrap;overflow:hidden}
+    .nav-item:hover{background:var(--bg-card-hover)}
+    .nav-item.active{background:var(--yellow-dim);border:1px solid rgba(255,193,7,.25)}
+    .nav-item.active .nav-icon{color:var(--yellow)}
+    .nav-item.active .nav-label{color:var(--yellow);font-weight:700}
+    .nav-icon{font-size:18px;flex-shrink:0;width:20px;text-align:center}
+    .nav-label{font-size:13px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis}
+    .nav-badge{margin-left:auto;background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(255,193,7,.3);font-size:10px;padding:1px 6px;border-radius:10px;flex-shrink:0;font-weight:700}
+    .nav-badge.soon{background:rgba(92,99,145,.2);color:var(--text-muted);border-color:var(--border)}
+    .sidebar.collapsed .nav-label,.sidebar.collapsed .nav-badge{display:none}
+    .sidebar.collapsed .nav-item{justify-content:center;padding:10px 0}
+    /* tooltip on collapsed */
+    .sidebar.collapsed .nav-item[data-tip]{position:relative}
+    .sidebar.collapsed .nav-item[data-tip]::after{content:attr(data-tip);position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%);background:#2a2d3e;border:1px solid var(--border);color:var(--text-primary);padding:5px 10px;border-radius:6px;font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s;z-index:999}
+    .sidebar.collapsed .sidebar-collapse-label{display:none}
+    .sidebar.collapsed #sidebarCollapseBtn{justify-content:center;padding:9px 0}
+    .sidebar.collapsed .nav-item[data-tip]:hover::after{opacity:1}
+    .sidebar-toggle{display:none}
+
+
+    /* ── Main ── */
+    .main-wrap{flex:1;display:flex;flex-direction:column;min-width:0;overflow:auto}
+    .topbar{background:linear-gradient(135deg,#1a1d27,#12152a);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .topbar-title{font-size:17px;font-weight:700;display:flex;align-items:center;gap:10px}
+    .topbar-icon{font-size:20px}
+    .topbar-sub{font-size:12px;color:var(--text-muted);margin-top:2px}
+    .topbar-badge{background:var(--yellow-dim);border:1px solid var(--yellow);color:var(--yellow);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
+    .page-content{flex:1;padding:20px 20px 40px}
+
+    /* ── Coming Soon ── */
+    .coming-soon{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:400px;gap:20px;color:var(--text-muted)}
+    .coming-soon-icon{font-size:64px;opacity:.5}
+    .coming-soon-title{font-size:22px;font-weight:700;color:var(--text-secondary)}
+    .coming-soon-desc{font-size:14px;text-align:center;max-width:320px;line-height:1.8}
+    .coming-soon-tag{background:var(--yellow-dim);border:1px solid rgba(255,193,7,.3);color:var(--yellow);padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600}
+
+    /* ── Filters ── */
+    .filter-bar{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px;row-gap:10px}
+    .filter-group{display:flex;align-items:center;gap:8px}
+    .filter-label{font-size:13px;color:var(--text-secondary);white-space:nowrap}
+    select{background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);padding:6px 28px 6px 10px;border-radius:8px;font-size:13px;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239fa8c9' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;width:110px;transition:border-color .2s}
+    select:focus{outline:none;border-color:var(--yellow)}
+    .filter-input{background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);padding:6px 10px;border-radius:8px;font-size:13px;width:120px;transition:border-color .2s;outline:none}
+    .filter-input:focus{border-color:var(--yellow)}
+    .filter-input::placeholder{color:var(--text-muted)}
+    .filter-divider{width:1px;height:24px;background:var(--border);flex-shrink:0}
+    @media(max-width:900px){.filter-divider{display:none}}
+    .btn-refresh{margin-left:auto;background:var(--yellow-dim);border:1px solid var(--yellow);color:var(--yellow);padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .2s}
+    .btn-refresh:hover{background:rgba(255,193,7,.25)}
+    .btn-refresh.loading svg{animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* ── View Tabs ── */
+    .view-tabs{display:flex;gap:0;margin-bottom:18px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:4px;width:fit-content}
+    .view-tab-btn{padding:7px 20px;border-radius:calc(var(--radius) - 2px);font-size:13px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--text-secondary);transition:all .2s;white-space:nowrap}
+    .view-tab-btn:hover{color:var(--text-primary)}
+    .view-tab-btn.active{background:var(--yellow);color:#1a1a2e;box-shadow:0 2px 6px rgba(255,193,7,.35)}
+
+    /* ── KPI ── */
+    .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+    @media(max-width:1300px){.kpi-grid{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+    .kpi-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden;transition:transform .2s,box-shadow .2s}
+    .kpi-card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+    .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+    .kpi-card.total::before{background:var(--blue)}
+    .kpi-card.avg::before{background:var(--orange)}
+    .kpi-card.red::before{background:var(--red)}
+    .kpi-card.yellow::before{background:var(--yellow)}
+    .kpi-card.green::before{background:var(--green)}
+    .kpi-icon{font-size:20px;margin-bottom:6px;display:block}
+    .kpi-value{font-size:32px;font-weight:800;line-height:1;margin-bottom:4px}
+    .kpi-card.total .kpi-value{color:var(--blue)}
+    .kpi-card.avg .kpi-value{color:var(--orange)}
+    .kpi-card.red .kpi-value{color:var(--red)}
+    .kpi-card.yellow .kpi-value{color:var(--yellow)}
+    .kpi-card.green .kpi-value{color:var(--green)}
+    .kpi-label{font-size:12px;color:var(--text-secondary);margin-bottom:4px}
+    .kpi-pct{font-size:13px;font-weight:700;margin-bottom:6px}
+    .kpi-card.red .kpi-pct{color:var(--red)}
+    .kpi-card.yellow .kpi-pct{color:var(--yellow)}
+    .kpi-card.green .kpi-pct{color:var(--green)}
+    .kpi-card.total .kpi-pct{color:var(--blue)}
+    .kpi-card.avg .kpi-pct{color:var(--orange)}
+    .kpi-change{font-size:11px;display:flex;align-items:center;gap:4px;color:var(--text-muted)}
+    .kpi-change .up{color:#f44336}
+    .kpi-change .down{color:#4caf50}
+    .kpi-change .avg-up{color:#f44336}
+    .kpi-change .avg-down{color:#4caf50}
+    .kpi-change .neutral{color:var(--text-muted)}
+
+    /* ── Charts grid ── */
+    .grid-2{display:grid;grid-template-columns:1.3fr 0.7fr;gap:14px;margin-bottom:18px}
+    @media(max-width:1100px){.grid-2{grid-template-columns:1fr}}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+    .card-title{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+    .card-title-dot{width:7px;height:7px;border-radius:50%;background:var(--yellow);flex-shrink:0}
+    .chart-wrap{position:relative;height:270px}
+
+    /* ── Ranking ── */
+    .rank-list{display:flex;flex-direction:column;gap:6px;max-height:270px;overflow-y:auto}
+    .rank-item{display:flex;align-items:center;gap:9px;padding:8px 11px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border);transition:background .15s}
+    .rank-item:hover{background:var(--bg-card-hover)}
+    .rank-num{width:21px;height:21px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+    .rank-num.gold{background:rgba(255,193,7,.2);color:var(--yellow);border:1px solid var(--yellow)}
+    .rank-num.silver{background:rgba(158,168,200,.15);color:#9ea8c8;border:1px solid #444}
+    .rank-num.bronze{background:rgba(205,127,50,.15);color:#cd7f32;border:1px solid #cd7f32}
+    .rank-num.normal{background:var(--bg-card);color:var(--text-muted);border:1px solid var(--border)}
+    .rank-num.bottom-rank{background:rgba(244,67,54,.15);color:var(--red);border:1px solid rgba(244,67,54,.4)}
+    .rank-name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .rank-score{font-size:13px;font-weight:700}
+    .rank-meta{font-size:11px;color:var(--text-muted);white-space:nowrap}
+
+    /* ── Table ── */
+    .table-section{margin-bottom:22px}
+    .table-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px}
+    .table-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+    .table-tabs{display:flex;gap:6px}
+    .tab-btn{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);transition:all .2s}
+    .tab-btn.active-all{background:var(--bg-card-hover);border-color:var(--blue);color:var(--blue)}
+    .tab-btn.active-red{background:var(--red-dim);border-color:var(--red);color:var(--red)}
+    .tab-btn.active-yellow{background:var(--yellow-dim);border-color:var(--yellow);color:var(--yellow)}
+    .table-count{font-size:12px;color:var(--text-muted);margin-left:4px}
+    .table-wrap{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+    .table-scroll{overflow-x:auto;max-height:500px;overflow-y:auto}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    thead{position:sticky;top:0;z-index:10}
+    thead tr{background:#252840}
+    th{padding:10px 13px;text-align:left;color:var(--text-muted);font-weight:600;font-size:12px;letter-spacing:.5px;border-bottom:1px solid var(--border);white-space:nowrap}
+    th.worst-col{color:var(--red) !important}
+    td{padding:9px 13px;border-bottom:1px solid rgba(46,50,80,.5);white-space:nowrap}
+    tr:last-child td{border-bottom:none}
+    tbody tr{transition:background .15s}
+    tbody tr:hover{background:rgba(255,255,255,.03)}
+    .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+    .badge-red{background:var(--red-dim);color:var(--red);border:1px solid rgba(244,67,54,.3)}
+    .badge-yellow{background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(255,193,7,.3)}
+    .badge-green{background:var(--green-dim);color:var(--green);border:1px solid rgba(76,175,80,.3)}
+    .score-cell{font-weight:700;font-size:14px}
+    .score-red{color:var(--red)}.score-yellow{color:var(--yellow)}.score-green{color:var(--green)}
+    .defeat-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red)}
+    .defeat-ok{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green)}
+    .loading-overlay{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:var(--text-muted);gap:16px}
+    .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--yellow);border-radius:50%;animation:spin .8s linear infinite}
+    .error-box{background:var(--red-dim);border:1px solid rgba(244,67,54,.3);border-radius:var(--radius);padding:20px;color:var(--red);text-align:center}
+    .footer{text-align:center;padding:16px 28px;color:var(--text-muted);font-size:12px;border-top:1px solid var(--border);flex-shrink:0}
+    .pagination{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid var(--border);background:var(--bg-card)}
+    .page-info{font-size:12px;color:var(--text-muted)}
+    .page-btn{padding:4px 11px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px;transition:all .15s}
+    .page-btn:hover:not(:disabled){border-color:var(--yellow);color:var(--yellow)}
+    .page-btn:disabled{opacity:.4;cursor:not-allowed}
+    [data-tip]{position:relative;cursor:help}
+    [data-tip]::after{content:attr(data-tip);position:absolute;bottom:120%;left:50%;transform:translateX(-50%);background:#2a2d3e;border:1px solid var(--border);color:var(--text-primary);padding:6px 10px;border-radius:6px;font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .2s;z-index:999}
+    [data-tip]:hover::after{opacity:1}
+  </style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-logo">🗺️</div>
+      <div class="brand-text">
+        <div class="brand-title">长沙二区</div>
+        <div class="brand-sub">业务监控看板</div>
+      </div>
+    </div>
+    <div class="sidebar-nav">
+      <div class="nav-item" id="nav-signup" data-tip="新签&春耕" onclick="switchPage('signup')">
+        <span class="nav-icon">🌱</span>
+        <span class="nav-label">新签&春耕</span>
+        <span class="nav-badge soon">即将上线</span>
+      </div>
+      <div class="nav-item" id="nav-qianghand" data-tip="神抢手" onclick="switchPage('qianghand')">
+        <span class="nav-icon">⚡</span>
+        <span class="nav-label">神抢手</span>
+        <span class="nav-badge soon">即将上线</span>
+      </div>
+      <div class="nav-item" id="nav-coupon" data-tip="优惠感" onclick="switchPage('coupon')">
+        <span class="nav-icon">🎟️</span>
+        <span class="nav-label">优惠感</span>
+        <span class="nav-badge soon">即将上线</span>
+      </div>
+      <div class="nav-item active" id="nav-experience" data-tip="体验分" onclick="switchPage('experience')">
+        <span class="nav-icon">🏆</span>
+        <span class="nav-label">体验分</span>
+        <span class="nav-badge">实时</span>
+      </div>
+      <div class="nav-item" id="nav-mvalue" data-tip="白领M值" onclick="switchPage('mvalue')">
+        <span class="nav-icon">💼</span>
+        <span class="nav-label">白领M值</span>
+        <span class="nav-badge soon">即将上线</span>
+      </div>
+    </div>
+
+    <!-- 侧边栏底部收起按钮 -->
+    <div style="padding:10px 8px;border-top:1px solid var(--border)">
+      <div onclick="toggleSidebar()" title="收起/展开侧边栏" data-tip="收起侧边栏"
+        style="display:flex;align-items:center;justify-content:center;gap:8px;
+               padding:9px 10px;border-radius:9px;cursor:pointer;
+               color:var(--text-muted);transition:background .18s,color .18s;
+               white-space:nowrap;overflow:hidden"
+        onmouseover="this.style.background='var(--bg-card-hover)';this.style.color='var(--yellow)'"
+        onmouseout="this.style.background='';this.style.color='var(--text-muted)'"
+        id="sidebarCollapseBtn">
+        <svg id="floatBtnIcon" width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 2L5 7l4 5"/>
+        </svg>
+        <span class="sidebar-collapse-label" style="font-size:12px">收起侧边栏</span>
+      </div>
+    </div>
+
+  </nav>
+
+  <!-- Main -->
+  <div class="main-wrap" id="mainWrap">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">
+          <span class="topbar-icon" id="topbarIcon">🏆</span>
+          <span id="topbarTitle">体验分监控</span>
+        </div>
+        <div class="topbar-sub">美团外卖 · 长沙二区 · 数据日期：<span id="dataDate">—</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="topbar-badge" id="lastUpdateBadge">数据加载中…</div>
+      </div>
+    </div>
+
+    <!-- ===== Page: 体验分 ===== -->
+    <div class="page-content" id="page-experience">
+      <div class="filter-bar">
+        <div class="filter-group">
+          <span class="filter-label">城市</span>
+          <input class="filter-input" id="filterCity" list="listCity" placeholder="全部城市" autocomplete="off" oninput="onCityChange()" />
+          <datalist id="listCity"></datalist>
+        </div>
+        <div class="filter-divider"></div>
+        <div class="filter-group">
+          <span class="filter-label">城市团队</span>
+          <input class="filter-input" id="filterTeam" list="listTeam" placeholder="全部团队" autocomplete="off" oninput="onTeamChange()" />
+          <datalist id="listTeam"></datalist>
+          <span id="teamRankBadge" style="display:none;margin-left:8px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(255,193,7,.3);white-space:nowrap;cursor:default"></span>
+        </div>
+        <div class="filter-divider"></div>
+        <div class="filter-group">
+          <span class="filter-label">联络点</span>
+          <input class="filter-input" id="filterContact" list="listContact" placeholder="全部联络点" autocomplete="off" oninput="onContactChange()" />
+          <datalist id="listContact"></datalist>
+          <span id="contactRankBadge" style="display:none;margin-left:8px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(255,193,7,.3);white-space:nowrap;cursor:default"></span>
+        </div>
+        <div class="filter-divider"></div>
+        <div class="filter-group">
+          <span class="filter-label">BD</span>
+          <input class="filter-input" id="filterBD" list="listBD" placeholder="全部BD" autocomplete="off" oninput="debounceLoad();updateBDRankBadge()" />
+          <datalist id="listBD"></datalist>
+          <span id="bdRankBadge" style="display:none;margin-left:8px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(255,193,7,.3);white-space:nowrap;cursor:default"></span>
+        </div>
+        <!-- 在线状态筛选器已隐藏：默认只拉在线商家(is_online=true)，无需显示 -->
+        <select id="filterOnline" style="display:none"><option value="true" selected>在线营业</option></select>
+        <button class="btn-refresh" id="btnRefresh" onclick="rawData=[];_filterLoaded=false;loadData()">
+          <svg id="refreshIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+          </svg>
+          刷新数据
+        </button>
+      </div>
+
+      <!-- 视图切换 Tab -->
+      <div class="view-tabs">
+        <button class="view-tab-btn active" id="vtab-overview" onclick="switchView('overview')">竞争分概览</button>
+        <button class="view-tab-btn"        id="vtab-cqs"      onclick="switchView('cqs')">CQS概览</button>
+        <button class="view-tab-btn"        id="vtab-detail"   onclick="switchView('detail')">商家明细</button>
+      </div>
+      <style>
+      /* BD排名板块 */
+      .bd-rank-item{display:flex;align-items:center;padding:7px 8px;border-radius:6px;gap:8px;margin-bottom:4px;background:var(--card-inner,rgba(255,255,255,.03));transition:background .15s;}
+      .bd-rank-item:hover{background:rgba(255,193,7,.06);}
+      .bd-rank-num{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
+      .bd-rank-num.gold{background:#FFD700;color:#1a1a1a;}
+      .bd-rank-num.silver{background:#C0C0C0;color:#1a1a1a;}
+      .bd-rank-num.bronze{background:#CD7F32;color:#fff;}
+      .bd-rank-num.normal{background:rgba(255,255,255,.1);color:var(--text-muted);}
+      .bd-rank-num.bottom-rank{background:rgba(244,67,54,.2);color:var(--red);}
+      .bd-rank-name{flex:1;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .bd-rank-score{font-size:14px;font-weight:700;min-width:48px;text-align:right;}
+      .bd-rank-meta{font-size:11px;color:var(--text-muted);min-width:48px;text-align:right;}
+      </style>
+
+      <!-- 视图：竞争分概览 -->
+      <div id="view-overview">
+      <div class="kpi-grid">
+        <div class="kpi-card total">
+          <span class="kpi-icon">🏪</span>
+          <div class="kpi-value" id="kpiTotal">—</div>
+          <div class="kpi-label">总商家数</div>
+          <div class="kpi-change" id="kpiTotalChange"><span class="neutral">昨日对比加载中…</span></div>
+        </div>
+        <div class="kpi-card avg">
+          <span class="kpi-icon">📊</span>
+          <div class="kpi-value" id="kpiAvg">—</div>
+          <div class="kpi-label">全区均分</div>
+          <div class="kpi-change" id="kpiAvgChange"><span class="neutral">昨日对比加载中…</span></div>
+        </div>
+        <div class="kpi-card red">
+          <span class="kpi-icon">🔴</span>
+          <div class="kpi-value" id="kpiRed">—</div>
+          <div class="kpi-label">红色预警（&lt; 90分）</div>
+          <div class="kpi-pct" id="kpiRedPct">—</div>
+          <div class="kpi-change" id="kpiRedChange"><span class="neutral">昨日对比加载中…</span></div>
+        </div>
+        <div class="kpi-card yellow">
+          <span class="kpi-icon">🟡</span>
+          <div class="kpi-value" id="kpiYellow">—</div>
+          <div class="kpi-label">黄色跟进（90–99分）</div>
+          <div class="kpi-pct" id="kpiYellowPct">—</div>
+          <div class="kpi-change" id="kpiYellowChange"><span class="neutral">昨日对比加载中…</span></div>
+        </div>
+        <div class="kpi-card green">
+          <span class="kpi-icon">✅</span>
+          <div class="kpi-value" id="kpiGreen">—</div>
+          <div class="kpi-label">正常（满分100）</div>
+          <div class="kpi-pct" id="kpiGreenPct">—</div>
+          <div class="kpi-change" id="kpiGreenChange"><span class="neutral">昨日对比加载中…</span></div>
+        </div>
+      </div>
+
+      <!-- 9项指标全宽 -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title"><span class="card-title-dot"></span>9项指标 · 均分 &amp; 落败率</div>
+        <div class="chart-wrap" style="height:260px"><canvas id="defeatChart"></canvas></div>
+        <!-- 指标数据行：均分 / 落败率 + 对比上期 -->
+        <div id="metricStatsRow" style="
+          display:grid;grid-template-columns:repeat(9,1fr);
+          gap:0;margin-top:2px;border-top:1px solid var(--border);padding-top:8px
+        "></div>
+      </div>
+
+      <!-- 节点排名大板块 -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title"><span class="card-title-dot"></span>节点排名</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+          <!-- 联络点排名 -->
+          <div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;padding-left:4px">📍 联络点（TOP3 + 末位3）</div>
+            <div class="rank-list" id="rankList">
+              <div class="loading-overlay" style="padding:20px"><div class="spinner"></div></div>
+            </div>
+          </div>
+          <!-- 城市团队排名 -->
+          <div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;padding-left:4px">🏙️ 城市团队（全部）</div>
+            <div class="rank-list" id="teamRankList">
+              <div class="loading-overlay" style="padding:20px"><div class="spinner"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BD排名大板块 -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title"><span class="card-title-dot"></span>BD排名</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+          <!-- BD在联络点内的排名 -->
+          <div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;padding-left:4px">📍 在联络点内排名（按当前联络点范围）</div>
+            <div id="bdRankInContact" class="rank-list">
+              <div class="loading-overlay" style="padding:20px"><div class="spinner"></div></div>
+            </div>
+          </div>
+          <!-- BD在城市团队内的排名 -->
+          <div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;padding-left:4px">🏙️ 在城市团队内排名（全团队视角）</div>
+            <div id="bdRankInTeam" class="rank-list">
+              <div class="loading-overlay" style="padding:20px"><div class="spinner"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      </div><!-- /view-overview -->
+
+      <!-- 视图：CQS概览 -->
+      <div id="view-cqs" style="display:none">
+        <div class="coming-soon">
+          <div class="coming-soon-icon">📋</div>
+          <div class="coming-soon-title">CQS概览</div>
+          <div class="coming-soon-desc">CQS商家覆盖率、菜品价格合规率、落败明细<br>数据接入中，即将上线</div>
+          <div class="coming-soon-tag">🚧 建设中</div>
+        </div>
+      </div>
+
+      <!-- 视图：商家明细 -->
+      <div id="view-detail" style="display:none">
+      <div class="table-section">
+        <div class="table-header">
+          <div class="table-title"><span class="card-title-dot"></span>商家明细<span class="table-count" id="tableCountLabel"></span></div>
+          <div class="table-tabs">
+            <button class="tab-btn active-all" id="tab-all"    onclick="switchTab('all')">全部</button>
+            <button class="tab-btn"            id="tab-red"    onclick="switchTab('red')">🔴 红色预警</button>
+            <button class="tab-btn"            id="tab-yellow" onclick="switchTab('yellow')">🟡 黄色跟进</button>
+          </div>
+        </div>
+        <!-- 商家明细筛选器 -->
+        <div id="detailFilters" style="display:flex;align-items:center;gap:12px;padding:10px 0 4px 0;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)">
+            <span>得分区间</span>
+            <select id="dfScoreOp" onchange="onScoreOpChange()" style="background:var(--card-bg);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer">
+              <option value="">不限</option>
+              <option value="lt">低于</option>
+              <option value="gt">高于</option>
+              <option value="between">介于</option>
+            </select>
+            <input id="dfScoreVal" type="number" min="0" max="100" placeholder="分值" oninput="applyDetailFilter()" style="display:none;width:64px;background:var(--card-bg);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;padding:3px 8px;font-size:12px">
+            <span id="dfBetweenSep" style="display:none;color:var(--text-muted)">~</span>
+            <input id="dfScoreVal2" type="number" min="0" max="100" placeholder="分值" oninput="applyDetailFilter()" style="display:none;width:64px;background:var(--card-bg);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;padding:3px 8px;font-size:12px">
+            <span id="dfScoreUnit" style="display:none;color:var(--text-muted)">分</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)">
+            <span>落败指标</span>
+            <select id="dfMetric" onchange="applyDetailFilter()" style="background:var(--card-bg);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;padding:3px 24px 3px 8px;font-size:12px;cursor:pointer;min-width:100px">
+              <option value="">全部</option>
+              <option value="f_starting_price">起步价</option>
+              <option value="f_biz_hours">营业时间</option>
+              <option value="f_manjian">满减</option>
+              <option value="f_delivery_fee">配送费</option>
+              <option value="f_cashback">追补YZ</option>
+              <option value="f_ladder">阶梯</option>
+              <option value="f_hot_dish">热门菜</option>
+              <option value="f_cqs_coverage">CQS覆盖</option>
+              <option value="f_cqs_price">CQS价格</option>
+            </select>
+          </div>
+          <span id="dfResultCount" style="font-size:11px;color:var(--text-muted)"></span>
+          <button onclick="clearDetailFilter()" style="font-size:11px;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;cursor:pointer">重置</button>
+        </div>
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th><th>门店名称</th><th>联络点</th><th>BD</th>
+                  <th>体验分 ↑</th><th>预警</th>
+                  <th id="th-f_starting_price" data-tip="起步价落败">起步价</th>
+                  <th id="th-f_biz_hours"      data-tip="营业时间落败">营业时间</th>
+                  <th id="th-f_manjian"        data-tip="满减落败">满减</th>
+                  <th id="th-f_delivery_fee"   data-tip="配送费落败">配送费</th>
+                  <th id="th-f_cashback"       data-tip="追补YZ落败">追补YZ</th>
+                  <th id="th-f_ladder"         data-tip="阶梯落败">阶梯</th>
+                  <th id="th-f_hot_dish"       data-tip="热门菜品落败">热门菜</th>
+                  <th id="th-f_cqs_coverage"   data-tip="CQS覆盖落败">CQS覆盖</th>
+                  <th id="th-f_cqs_price"      data-tip="CQS价格落败">CQS价格</th>
+                  <th data-tip="总落败数">落败数</th>
+                </tr>
+              </thead>
+              <tbody id="merchantTbody">
+                <tr><td colspan="16"><div class="loading-overlay"><div class="spinner"></div><span>正在从 Supabase 加载数据…</span></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <span class="page-info" id="pageInfo">—</span>
+            <button class="page-btn" id="btnPrev" onclick="changePage(-1)" disabled>‹ 上一页</button>
+            <button class="page-btn" id="btnNext" onclick="changePage(1)"  disabled>下一页 ›</button>
+          </div>
+        </div>
+      </div>
+      </div><!-- /view-detail -->
+    </div><!-- /page-experience -->
+
+    <!-- ===== Page: 新签&春耕 ===== -->
+    <div class="page-content" id="page-signup" style="display:none">
+      <div class="coming-soon">
+        <div class="coming-soon-icon">🌱</div>
+        <div class="coming-soon-title">新签&春耕</div>
+        <div class="coming-soon-desc">新签进度、春耕任务完成率、BD排行榜<br>数据接入中，即将上线</div>
+        <div class="coming-soon-tag">🚧 建设中</div>
+      </div>
+    </div>
+
+    <!-- ===== Page: 神抢手 ===== -->
+    <div class="page-content" id="page-qianghand" style="display:none">
+      <div class="coming-soon">
+        <div class="coming-soon-icon">⚡</div>
+        <div class="coming-soon-title">神抢手</div>
+        <div class="coming-soon-desc">神抢手覆盖率、活跃商家数、策略执行情况<br>数据接入中，即将上线</div>
+        <div class="coming-soon-tag">🚧 建设中</div>
+      </div>
+    </div>
+
+    <!-- ===== Page: 优惠感 ===== -->
+    <div class="page-content" id="page-coupon" style="display:none">
+      <div class="coming-soon">
+        <div class="coming-soon-icon">🎟️</div>
+        <div class="coming-soon-title">优惠感 · 新券+高价覆盖</div>
+        <div class="coming-soon-desc">神券报名率、高价商品覆盖率、券包数据<br>数据接入中，即将上线</div>
+        <div class="coming-soon-tag">🚧 建设中</div>
+      </div>
+    </div>
+
+    <!-- ===== Page: 白领M值 ===== -->
+    <div class="page-content" id="page-mvalue" style="display:none">
+      <div class="coming-soon">
+        <div class="coming-soon-icon">💼</div>
+        <div class="coming-soon-title">白领M值</div>
+        <div class="coming-soon-desc">白领商圈M值分布、重点商圈跟进情况<br>数据接入中，即将上线</div>
+        <div class="coming-soon-tag">🚧 建设中</div>
+      </div>
+    </div>
+
+    <div class="footer">数据来源：美团外卖 BI 全国体验分看板 · 数据日期：<span id="footerDate">—</span> · 每工作日 08:40 自动更新</div>
+  </div><!-- /main-wrap -->
+</div><!-- /layout -->
+
+<script>
+const SB_URL = 'https://tetfwgomiomjybvdnqul.supabase.co';
+const SB_KEY = 'sb_publishable_TThJ3m4iPyAq58lb6KYreg_b65QF9cB';
+const TABLE  = 'merchants';
+const PAGE_SIZE = 50, BATCH = 2000;
+
+let allData=[], rawData=[], filteredData=[], curPage=1, curTab='all', chartInst=null, worst2Keys=[], prevChartData=null;
+
+const METRICS=[
+  {key:'f_starting_price',label:'起步价',   scoreKey:'starting_price_score', mtKey:'mt_starting_price', bKey:'b_starting_price', unit:'元'},
+  {key:'f_biz_hours',     label:'营业时间', scoreKey:'biz_hours_score',      mtKey:'mt_biz_hours',      bKey:'b_biz_hours',      unit:''},
+  {key:'f_manjian',       label:'满减',     scoreKey:'manjian_score',        mtKey:'mt_manjian',        bKey:'b_manjian',        unit:''},
+  {key:'f_delivery_fee',  label:'配送费',   scoreKey:'delivery_fee_score',   mtKey:'mt_delivery_fee',   bKey:'b_delivery_fee',   unit:'元'},
+  {key:'f_cashback',      label:'追补YZ',   scoreKey:'cashback_score',       mtKey:'mt_cashback_yz',    bKey:'b_cashback_yz',    unit:''},
+  {key:'f_ladder',        label:'阶梯',     scoreKey:'ladder_score',         mtKey:'mt_ladder',         bKey:'b_ladder',         unit:''},
+  {key:'f_hot_dish',      label:'热门菜',   scoreKey:'hot_dish_score',       mtKey:'mt_hot_dish_flag',  bKey:'b_hot_dish_flag',  unit:''},
+  {key:'f_cqs_coverage',  label:'CQS覆盖',  scoreKey:'cqs_coverage_score',   mtKey:null,                bKey:null,               unit:''},
+  {key:'f_cqs_price',     label:'CQS价格',  scoreKey:'cqs_price_score',      mtKey:null,                bKey:null,               unit:''},
+];
+// 判断某商家某指标是否落败（得分 < 90 即为落败）
+function isDefeated(r, m){ return r[m.scoreKey]!=null && r[m.scoreKey]<90; }
+
+const PAGE_META = {
+  experience: { icon:'🏆', title:'体验分监控' },
+  signup:     { icon:'🌱', title:'新签&春耕' },
+  qianghand:  { icon:'⚡', title:'神抢手' },
+  coupon:     { icon:'🎟️', title:'优惠感' },
+  mvalue:     { icon:'💼', title:'白领M值' },
+};
+
+function switchPage(page) {
+  // Update nav
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('nav-'+page)?.classList.add('active');
+  // Update pages
+  document.querySelectorAll('.page-content').forEach(el => el.style.display='none');
+  document.getElementById('page-'+page).style.display='block';
+  // Update topbar
+  const meta = PAGE_META[page] || {};
+  document.getElementById('topbarIcon').textContent = meta.icon || '📊';
+  document.getElementById('topbarTitle').textContent = meta.title || page;
+  // Load data if experience
+  if (page === 'experience' && allData.length === 0) loadData();
+}
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  const collapsed = sb.classList.contains('collapsed');
+  const icon = document.getElementById('floatBtnIcon');
+  // 展开状态：箭头朝左（< 收起）；折叠状态：箭头朝右（> 展开）
+  if(icon) icon.style.transform = collapsed ? 'rotate(180deg)' : '';
+  // 折叠时更新 tooltip 和文字
+  const btn = document.getElementById('sidebarCollapseBtn');
+  if(btn) btn.title = collapsed ? '展开侧边栏' : '收起侧边栏';
+  const lbl = btn && btn.querySelector('.sidebar-collapse-label');
+  if(lbl) lbl.textContent = collapsed ? '展开侧边栏' : '收起侧边栏';
+}
+
+
+async function sbFetch(params){
+  const r=await fetch(`${SB_URL}/rest/v1/${TABLE}?${params}`,{
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'count=exact'}
+  });
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  const total=parseInt((r.headers.get('Content-Range')||'').split('/')[1]||0,10);
+  return {data:await r.json(),total};
+}
+
+let _latestDate='';
+async function getLatestDate(){
+  if(_latestDate) return _latestDate;
+  const r=await fetch(`${SB_URL}/rest/v1/merchants?select=data_date&order=data_date.desc&limit=1`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+  const d=await r.json();
+  _latestDate=(d[0]&&d[0].data_date)||'';
+  return _latestDate;
+}
+
+async function fetchAll(city,team,cp,bd,online){
+  const latestDate=await getLatestDate();
+  let base=`data_date=eq.${latestDate}&is_online=eq.true`; // 默认只看在线商家
+  if(city)     base+=`&city=eq.${encodeURIComponent(city)}`;
+  if(team)     base+=`&contact_point=like.${encodeURIComponent(team+'%')}`;
+  if(cp)       base+=`&contact_point=eq.${encodeURIComponent(cp)}`;
+  if(bd)       base+=`&bd_name=eq.${encodeURIComponent(bd)}`;
+  // online 参数保留但默认已过滤，不再追加（全量拉的就是在线商家）
+  const ord='order=experience_score.asc.nullslast';
+  const {data:first,total}=await sbFetch(`${base}&offset=0&limit=${BATCH}&${ord}`);
+  let rows=[...first];
+  if(total>BATCH){
+    const ps=[];
+    for(let o=BATCH;o<total;o+=BATCH)
+      ps.push(sbFetch(`${base}&offset=${o}&limit=${BATCH}&${ord}`).then(r=>r.data));
+    (await Promise.all(ps)).forEach(b=>rows.push(...b));
+  }
+  rows.sort((a,b)=>(a.experience_score??999)-(b.experience_score??999));
+  return rows;
+}
+
+async function loadData(){
+  const btn=document.getElementById('btnRefresh');
+  btn.disabled=true; btn.classList.add('loading');
+  const city=document.getElementById('filterCity').value.trim();
+  const team=document.getElementById('filterTeam').value.trim();
+  const cp=document.getElementById('filterContact').value.trim();
+  const bd=document.getElementById('filterBD').value.trim();
+  const on=document.getElementById('filterOnline').value;
+  document.getElementById('merchantTbody').innerHTML=
+    `<tr><td colspan="16"><div class="loading-overlay"><div class="spinner"></div><span>加载中…</span></div></td></tr>`;
+  try{
+    // 首次加载：先拉全量（用于筛选器+节点排名），再用已有全量做本地筛选
+    if(!rawData.length){
+      document.getElementById('merchantTbody').innerHTML=
+        `<tr><td colspan="16"><div class="loading-overlay"><div class="spinner"></div><span>首次加载全量数据，约需5-10秒…</span></div></td></tr>`;
+      rawData=await fetchAll('','','','','');
+      buildContactRanking();
+      _filterLoaded=false; // 强制重建筛选器
+    }
+    // 本地筛选，不再发额外请求
+    const hasFilter=city||team||cp||bd||on;
+    if(hasFilter){
+      allData=rawData.filter(r=>{
+        if(city && r.city!==city) return false;
+        if(team && !r.contact_point?.startsWith(team)) return false;
+        if(cp && r.contact_point!==cp) return false;
+        if(bd && r.bd_name!==bd) return false;
+        // is_online 已在全量拉取时固定为 true，无需再本地过滤
+        return true;
+      });
+    } else {
+      allData=[...rawData];
+    }
+    await populateFilters();
+    renderKPIs(); renderCharts(); renderRanking(); renderTeamRanking(); renderBDRanking();
+    updateContactRankBadge(); updateTeamRankBadge(); updateBDRankBadge();
+    applyTab(curTab);
+    const now=new Date();
+    document.getElementById('lastUpdateBadge').textContent=
+      `最后更新: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+    const displayDate=_latestDate?`${_latestDate.slice(0,4)}-${_latestDate.slice(4,6)}-${_latestDate.slice(6,8)}`:'—';
+    document.getElementById('dataDate').textContent=displayDate;
+    document.getElementById('footerDate').textContent=displayDate;
+  }catch(e){
+    document.getElementById('merchantTbody').innerHTML=
+      `<tr><td colspan="16"><div class="error-box">加载失败: ${e.message}</div></td></tr>`;
+  }finally{
+    btn.disabled=false; btn.classList.remove('loading');
+  }
+}
+
+let _allCities=[], _allTeams=[], _allContacts=[], _allBDs=[], _filterLoaded=false;
+let _debTimer=null;
+function debounceLoad(){ clearTimeout(_debTimer); _debTimer=setTimeout(loadData,400); }
+
+// 从 contact_point 提取城市团队前缀
+// 优先匹配"XX区"（如长沙一区、南昌二区），匹配不到则回退用 city 字段（九江/赣州/黄石）
+function extractTeam(cp, city){ const m=cp&&cp.match(/^(.+?区)/); return m?m[1]:(city||null); }
+
+async function populateFilters(){
+  if(_filterLoaded) return;
+  const raw=rawData.length?rawData:allData; // 直接用内存全量，不发请求
+  _allCities=[...new Set(raw.map(r=>r.city).filter(Boolean))].sort();
+  _allTeams=[...new Set(raw.map(r=>extractTeam(r.contact_point,r.city)).filter(Boolean))].sort();
+  _allContacts=[...new Set(raw.map(r=>r.contact_point).filter(Boolean))].sort();
+  _allBDs=[...new Set(raw.map(r=>r.bd_name).filter(Boolean))].sort();
+  // 建立映射
+  _teamsByCity={};
+  _contactsByTeam={};
+  raw.forEach(r=>{
+    const team=extractTeam(r.contact_point,r.city);
+    if(r.city&&team){ if(!_teamsByCity[r.city]) _teamsByCity[r.city]=[]; if(!_teamsByCity[r.city].includes(team)) _teamsByCity[r.city].push(team); }
+    if(team&&r.contact_point){ if(!_contactsByTeam[team]) _contactsByTeam[team]=[]; if(!_contactsByTeam[team].includes(r.contact_point)) _contactsByTeam[team].push(r.contact_point); }
+  });
+  fillDatalist('listCity', _allCities);
+  fillDatalist('listTeam', _allTeams);
+  fillDatalist('listContact', _allContacts);
+  fillDatalist('listBD', _allBDs);
+  document.getElementById('filterOnline').addEventListener('change', loadData);
+  _filterLoaded=true;
+}
+
+let _teamsByCity={}, _contactsByTeam={};
+function fillDatalist(id, items){
+  const dl=document.getElementById(id); if(!dl) return; dl.innerHTML='';
+  items.forEach(v=>{ const o=document.createElement('option'); o.value=v; dl.appendChild(o); });
+}
+
+function onCityChange(){
+  const city=document.getElementById('filterCity').value.trim();
+  const teams=city&&_teamsByCity[city]?[..._teamsByCity[city]].sort():_allTeams;
+  fillDatalist('listTeam', teams);
+  document.getElementById('filterTeam').value='';
+  document.getElementById('filterContact').value='';
+  document.getElementById('filterBD').value='';
+  debounceLoad();
+}
+function onTeamChange(){
+  const team=document.getElementById('filterTeam').value.trim();
+  const contacts=team&&_contactsByTeam[team]?[..._contactsByTeam[team]].sort():_allContacts;
+  fillDatalist('listContact', contacts);
+  document.getElementById('filterContact').value='';
+  document.getElementById('filterBD').value='';
+  updateTeamRankBadge();
+  debounceLoad();
+}
+function onContactChange(){
+  document.getElementById('filterBD').value='';
+  updateContactRankBadge();
+  debounceLoad();
+}
+
+function renderKPIs(){
+  const n=allData.length;
+  const red=allData.filter(r=>r.alert_level==='red').length;
+  const yellow=allData.filter(r=>r.alert_level==='yellow').length;
+  const green=allData.filter(r=>r.alert_level==='normal').length;
+  const scored=allData.filter(r=>r.experience_score!=null);
+  const avg=scored.length?(scored.reduce((s,r)=>s+r.experience_score,0)/scored.length):0;
+  document.getElementById('kpiTotal').textContent=n.toLocaleString();
+  document.getElementById('kpiAvg').textContent=avg.toFixed(2);
+  document.getElementById('kpiRed').textContent=red.toLocaleString();
+  document.getElementById('kpiYellow').textContent=yellow.toLocaleString();
+  document.getElementById('kpiGreen').textContent=green.toLocaleString();
+  const pct=v=>n?`${((v/n)*100).toFixed(1)}%`:'—';
+  document.getElementById('kpiRedPct').textContent=`占比 ${pct(red)}`;
+  document.getElementById('kpiYellowPct').textContent=`占比 ${pct(yellow)}`;
+  document.getElementById('kpiGreenPct').textContent=`占比 ${pct(green)}`;
+  // 昨日对比（异步加载）
+  loadYesterdayKPIs({n, red, yellow, green, avg});
+}
+
+async function loadYesterdayKPIs(today){
+  // 获取数据库中最近两个 data_date
+  const noChange=id=>{
+    const el=document.getElementById(id);
+    if(el) el.innerHTML='<span class="neutral">暂无历史数据</span>';
+  };
+  try{
+    // 用 rawData 中已知的最新日期，避免再发请求
+    const knownDates=[...new Set(rawData.map(r=>r.data_date).filter(Boolean))].sort();
+    if(!knownDates.length){['kpiTotalChange','kpiAvgChange','kpiRedChange','kpiYellowChange','kpiGreenChange'].forEach(noChange);return;}
+    const latestDate=knownDates[knownDates.length-1];
+    // 找前一天日期（查一次即可，limit 小）
+    const res2=await fetch(`${SB_URL}/rest/v1/merchants?select=data_date&limit=100&order=data_date.desc`,{
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    });
+    const all2=await res2.json();
+    const dates=[...new Set(all2.map(r=>r.data_date))].sort();
+    if(dates.length<2){['kpiTotalChange','kpiAvgChange','kpiRedChange','kpiYellowChange','kpiGreenChange'].forEach(noChange);return;}
+    const prevDate=dates[dates.length-2];
+    // 拉前一天数据（全量，加筛选条件）
+    const filterParams=buildFilterParams();
+    const url=`${SB_URL}/rest/v1/merchants?select=alert_level,experience_score,data_date&data_date=eq.${prevDate}${filterParams}&limit=10000`;
+    const res3=await fetch(url,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+    const yd=await res3.json();
+    const yn=yd.length;
+    const yred=yd.filter(r=>r.alert_level==='red').length;
+    const yyellow=yd.filter(r=>r.alert_level==='yellow').length;
+    const ygreen=yd.filter(r=>r.alert_level==='normal').length;
+    const yscored=yd.filter(r=>r.experience_score!=null);
+    const yavg=yscored.length?(yscored.reduce((s,r)=>s+r.experience_score,0)/yscored.length):0;
+    const setChange=(id,cur,prev,reverse=false)=>{
+      const el=document.getElementById(id); if(!el)return;
+      const diff=cur-prev;
+      if(diff===0){el.innerHTML='<span class="neutral">与昨日持平</span>';return;}
+      const isGood=reverse?(diff<0):(diff>0);
+      const cls=isGood?'down':'up';
+      const arrow=diff>0?'↑':'↓';
+      el.innerHTML=`<span class="${cls}">${arrow}${Math.abs(diff).toLocaleString()} 较昨日（${prevDate}）</span>`;
+    };
+    const setChangeFloat=(id,cur,prev)=>{
+      const el=document.getElementById(id); if(!el)return;
+      const diff=+(cur-prev).toFixed(2);
+      if(diff===0){el.innerHTML='<span class="neutral">与昨日持平</span>';return;}
+      const isGood=diff>0;
+      const cls=isGood?'avg-down':'avg-up';
+      const arrow=diff>0?'↑':'↓';
+      el.innerHTML=`<span class="${cls}">${arrow}${Math.abs(diff).toFixed(2)} 较昨日（${prevDate}）</span>`;
+    };
+    setChange('kpiTotalChange', today.n, yn);
+    setChangeFloat('kpiAvgChange', today.avg, yavg);
+    setChange('kpiRedChange', today.red, yred, true);    // 红色预警↓是好事
+    setChange('kpiYellowChange', today.yellow, yyellow, true);
+    setChange('kpiGreenChange', today.green, ygreen, false); // 正常↑是好事
+  }catch(e){
+    ['kpiTotalChange','kpiAvgChange','kpiRedChange','kpiYellowChange','kpiGreenChange'].forEach(noChange);
+  }
+}
+
+// 构建当前筛选条件的 URL 参数（用于昨日对比拉同口径数据）
+function buildFilterParams(){
+  let p='';
+  const city=document.getElementById('filterCity')?.value?.trim();
+  const team=document.getElementById('filterTeam')?.value?.trim();
+  const contact=document.getElementById('filterContact')?.value?.trim();
+  const bd=document.getElementById('filterBD')?.value?.trim();
+  const online=document.getElementById('filterOnline')?.value;
+  if(city) p+=`&city=eq.${encodeURIComponent(city)}`;
+  if(online!==undefined&&online!=='') p+=`&is_online=eq.${online}`;
+  // team/contact/bd 用 ilike
+  if(team) p+=`&contact_point=ilike.*${encodeURIComponent(team)}*`;
+  if(contact) p+=`&contact_point=eq.${encodeURIComponent(contact)}`;
+  if(bd) p+=`&bd_name=ilike.*${encodeURIComponent(bd)}*`;
+  return p;
+}
+
+function renderCharts(){
+  const n=allData.length||1;
+  const rates=METRICS.map(m=>+((allData.filter(r=>isDefeated(r,m)).length/n)*100).toFixed(1));
+  // 各指标均分（score字段名：f_xxx对应xxx_score）
+  const scoreKeys={
+    f_starting_price:'starting_price_score',f_biz_hours:'biz_hours_score',
+    f_manjian:'manjian_score',f_delivery_fee:'delivery_fee_score',
+    f_cashback:'cashback_score',f_ladder:'ladder_score',
+    f_hot_dish:'hot_dish_score',f_cqs_coverage:'cqs_coverage_score',f_cqs_price:'cqs_price_score'
+  };
+  const avgs=METRICS.map(m=>{
+    const sk=scoreKeys[m.key];
+    const valid=allData.filter(r=>r[sk]!=null);
+    return valid.length?+(valid.reduce((s,r)=>s+r[sk],0)/valid.length).toFixed(1):null;
+  });
+  // 颜色：落败率高→红，中→黄，低→绿
+  const barColors=rates.map(v=>v>=30?'rgba(244,67,54,.85)':v>=15?'rgba(255,193,7,.85)':'rgba(76,175,80,.75)');
+  const sorted=[...rates].map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v);
+  METRICS.forEach((_,i)=>{const th=document.getElementById(`th-${METRICS[i].key}`);if(th)th.classList.remove('worst-col');});
+  sorted.slice(0,2).forEach(({i})=>{const th=document.getElementById(`th-${METRICS[i].key}`);if(th)th.classList.add('worst-col');});
+  worst2Keys=sorted.slice(0,2).map(({i})=>METRICS[i].key);
+  if(chartInst) chartInst.destroy();
+  chartInst=new Chart(document.getElementById('defeatChart').getContext('2d'),{
+    type:'bar',
+    data:{
+      labels:METRICS.map(m=>m.label),
+      datasets:[
+        {
+          type:'bar',label:'落败率(%)',data:rates,
+          backgroundColor:barColors,borderRadius:6,borderSkipped:false,
+          yAxisID:'yRate',order:2
+        },
+        {
+          type:'line',label:'均分',data:avgs,
+          borderColor:'rgba(255,193,7,0.9)',backgroundColor:'rgba(255,193,7,0.15)',
+          pointBackgroundColor:'rgba(255,193,7,1)',pointRadius:5,pointHoverRadius:7,
+          borderWidth:2.5,tension:0.35,fill:false,
+          yAxisID:'yScore',order:1
+        }
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{
+          display:true,
+          labels:{color:'#9fa8c9',font:{size:11},boxWidth:12,padding:14}
+        },
+        tooltip:{
+          callbacks:{
+            label(ctx){
+              const label=ctx.dataset.label;
+              const val=ctx.raw;
+              if(val==null) return `${label}: 暂无数据`;
+              if(label==='落败率(%)'){
+                let base=` 落败率: ${val}%`;
+                if(prevChartData){
+                  const pv=prevChartData.rates[ctx.dataIndex];
+                  const diff=+(val-pv).toFixed(1);
+                  base+=diff>0?`  ↑${diff}% 较上期`:diff<0?`  ↓${Math.abs(diff)}% 较上期`:`  持平`;
+                }
+                return base;
+              }
+              if(label==='均分'){
+                let base=` 均分: ${val}`;
+                if(prevChartData){
+                  const pv=prevChartData.avgs[ctx.dataIndex];
+                  if(pv!=null){
+                    const diff=+(val-pv).toFixed(1);
+                    base+=diff>0?`  ↑${diff} 较上期`:diff<0?`  ↓${Math.abs(diff)} 较上期`:`  持平`;
+                  }
+                }
+                return base;
+              }
+              return `${label}: ${val}`;
+            }
+          }
+        }
+      },
+      scales:{
+        x:{ticks:{color:'#9fa8c9',font:{size:11},maxRotation:30,minRotation:0},grid:{color:'rgba(46,50,80,.5)'}},
+        yRate:{
+          type:'linear',position:'left',
+          ticks:{color:'#9fa8c9',font:{size:11},callback:v=>v+'%'},
+          grid:{color:'rgba(46,50,80,.5)'},
+          title:{display:true,text:'落败率',color:'#9fa8c9',font:{size:10}},
+          max:Math.min(100,Math.ceil((Math.max(...rates)+15)/10)*10),min:0
+        },
+        yScore:{
+          type:'linear',position:'right',
+          ticks:{color:'rgba(255,193,7,.8)',font:{size:11}},
+          grid:{drawOnChartArea:false},
+          title:{display:true,text:'均分',color:'rgba(255,193,7,.8)',font:{size:10}},
+          min:50,max:100
+        }
+      }
+    }
+  });
+  // 渲染指标数据行
+  renderMetricStats(rates, avgs, null, null);
+  // 异步加载上期数据用于 tooltip 对比
+  loadPrevChartData(rates, avgs);
+}
+
+async function loadPrevChartData(curRates, curAvgs){
+  try{
+    const res=await fetch(`${SB_URL}/rest/v1/merchants?select=data_date&limit=100&order=data_date.desc`,{
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    });
+    const rows=await res.json();
+    const dates=[...new Set(rows.map(r=>r.data_date))].sort();
+    if(dates.length<2){prevChartData=null;renderMetricStats(curRates,curAvgs,null,null);return;}
+    const prevDate=dates[dates.length-2];
+    const filterParams=buildFilterParams();
+    const scoreFields='f_starting_price,f_biz_hours,f_manjian,f_delivery_fee,f_cashback,f_ladder,f_hot_dish,f_cqs_coverage,f_cqs_price,starting_price_score,biz_hours_score,manjian_score,delivery_fee_score,cashback_score,ladder_score,hot_dish_score,cqs_coverage_score,cqs_price_score';
+    const url=`${SB_URL}/rest/v1/merchants?select=${scoreFields}&data_date=eq.${prevDate}${filterParams}&limit=10000`;
+    const res2=await fetch(url,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+    const yd=await res2.json();
+    const yn=yd.length||1;
+    const scoreKeys={f_starting_price:'starting_price_score',f_biz_hours:'biz_hours_score',f_manjian:'manjian_score',f_delivery_fee:'delivery_fee_score',f_cashback:'cashback_score',f_ladder:'ladder_score',f_hot_dish:'hot_dish_score',f_cqs_coverage:'cqs_coverage_score',f_cqs_price:'cqs_price_score'};
+    prevChartData={
+      rates:METRICS.map(m=>+((yd.filter(r=>isDefeated(r,m)).length/yn)*100).toFixed(1)),
+      avgs:METRICS.map(m=>{const sk=scoreKeys[m.key];const v=yd.filter(r=>r[sk]!=null);return v.length?+(v.reduce((s,r)=>s+r[sk],0)/v.length).toFixed(1):null;})
+    };
+    // 上期数据加载完后刷新数据行
+    renderMetricStats(curRates, curAvgs, prevChartData.rates, prevChartData.avgs);
+  }catch(e){prevChartData=null;}
+}
+
+function renderMetricStats(rates, avgs, prevRates, prevAvgs){
+  const el=document.getElementById('metricStatsRow');
+  if(!el) return;
+  const diff=(cur,prev,invert=false)=>{
+    if(prev==null||cur==null) return '';
+    const d=+(cur-prev).toFixed(1);
+    if(d===0) return `<span style="color:var(--text-muted);font-size:10px"> →持平</span>`;
+    // 落败率：下降是好事；均分：上升是好事
+    const good = invert ? d<0 : d>0;
+    const color = good ? 'var(--green)' : 'var(--red)';
+    const arrow = d>0 ? '↑' : '↓';
+    return `<span style="color:${color};font-size:10px"> ${arrow}${Math.abs(d)}</span>`;
+  };
+  el.innerHTML=METRICS.map((m,i)=>{
+    const avg=avgs[i]!=null?avgs[i].toFixed(1):'—';
+    const rate=rates[i]!=null?rates[i].toFixed(1)+'%':'—';
+    const avgDiff=diff(avgs[i], prevAvgs?.[i], false);   // 均分上升=好
+    const rateDiff=diff(rates[i], prevRates?.[i], true);  // 落败率下降=好
+    return `<div style="text-align:center;padding:4px 2px;border-right:1px solid var(--border);last-child:border:none">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">${m.label}</div>
+      <div style="font-size:12px;color:var(--yellow);font-weight:700">${avg}${avgDiff}</div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${rate}${rateDiff}</div>
+    </div>`;
+  }).join('');
+}
+
+// 全量联络点 & 城市团队排名（基于全量数据，不受筛选影响）
+let _allContactRanking=[], _allTeamRanking=[];
+
+function buildContactRanking(){
+  const src=rawData.length?rawData:allData; // 优先用全量缓存
+  // --- 联络点 ---
+  const cpMap={};
+  src.forEach(r=>{
+    const cp=r.contact_point||'未知';
+    if(!cpMap[cp]) cpMap[cp]={sum:0,count:0,red:0};
+    if(r.experience_score!=null){cpMap[cp].sum+=r.experience_score;cpMap[cp].count++;}
+    if(r.alert_level==='red') cpMap[cp].red++;
+  });
+  _allContactRanking=Object.entries(cpMap).map(([name,v])=>({
+    name, avg:v.count?(v.sum/v.count):0, count:v.count, red:v.red
+  })).sort((a,b)=>b.avg-a.avg);
+  // --- 城市团队（用 extractTeam 提取，与筛选器一致）---
+  const tmMap={};
+  src.forEach(r=>{
+    const tm=extractTeam(r.contact_point, r.city)||'未知';
+    if(!tmMap[tm]) tmMap[tm]={sum:0,count:0,red:0};
+    if(r.experience_score!=null){tmMap[tm].sum+=r.experience_score;tmMap[tm].count++;}
+    if(r.alert_level==='red') tmMap[tm].red++;
+  });
+  _allTeamRanking=Object.entries(tmMap).map(([name,v])=>({
+    name, avg:v.count?(v.sum/v.count):0, count:v.count, red:v.red
+  })).sort((a,b)=>b.avg-a.avg);
+}
+
+function renderRanking(){
+  // 当前筛选范围内的联络点排名（高分→低分），显示 TOP3 + 尾部3
+  const map={};
+  allData.forEach(r=>{
+    const cp=r.contact_point||'未知';
+    if(!map[cp]) map[cp]={sum:0,count:0,red:0};
+    if(r.experience_score!=null){map[cp].sum+=r.experience_score;map[cp].count++;}
+    if(r.alert_level==='red') map[cp].red++;
+  });
+  const sorted=Object.entries(map).map(([name,v])=>({
+    name, avg:v.count?(v.sum/v.count):0, count:v.count, red:v.red
+  })).sort((a,b)=>b.avg-a.avg); // 高分优先降序
+
+  const total=sorted.length;
+  let list=[];
+  if(total<=6){
+    list=sorted.map((item,i)=>({...item, rank:i+1, section:null}));
+  } else {
+    const top3=sorted.slice(0,3).map((item,i)=>({...item, rank:i+1, section:'top'}));
+    const bot3=sorted.slice(-3).map((item,i)=>({...item, rank:total-2+i, section:'bottom'}));
+    list=[...top3, {divider:true}, ...bot3];
+  }
+
+  const numClass=(rank,section)=>section==='top'?(rank===1?'gold':rank===2?'silver':'bronze'):'bottom-rank';
+  const scoreColor=v=>v<90?'var(--red)':v<100?'var(--yellow)':'var(--green)';
+  document.getElementById('rankList').innerHTML=list.map(item=>{
+    if(item.divider) return `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:4px 0;letter-spacing:2px">· · ·</div>`;
+    const badge=item.section==='top'
+      ?`<span style="font-size:10px;color:var(--green);background:var(--green-dim);border-radius:10px;padding:1px 6px;margin-left:4px">TOP</span>`
+      :item.section==='bottom'
+      ?`<span style="font-size:10px;color:var(--red);background:var(--red-dim);border-radius:10px;padding:1px 6px;margin-left:4px">末位</span>`
+      :'';
+    return `<div class="rank-item">
+      <div class="rank-num ${numClass(item.rank,item.section)}">${item.rank}</div>
+      <div class="rank-name" title="${esc(item.name)}">${esc(item.name)}${badge}</div>
+      <div class="rank-score" style="color:${scoreColor(item.avg)}">${item.avg.toFixed(2)}</div>
+      <div class="rank-meta">🔴${item.red}家</div>
+    </div>`;
+  }).join('');
+}
+
+function _applyRankBadge(badgeEl, rankIdx, total){
+  if(rankIdx<0){badgeEl.style.display='none';return;}
+  const rank=rankIdx+1;
+  const pct=((rank/total)*100).toFixed(0);
+  badgeEl.textContent=`第${rank}名 · 前${pct}%`;
+  if(rank/total<=0.2){
+    badgeEl.style.background='var(--green-dim)';badgeEl.style.color='var(--green)';badgeEl.style.borderColor='rgba(76,175,80,.3)';
+  } else if(rank/total>=0.8){
+    badgeEl.style.background='var(--red-dim)';badgeEl.style.color='var(--red)';badgeEl.style.borderColor='rgba(244,67,54,.3)';
+  } else {
+    badgeEl.style.background='var(--yellow-dim)';badgeEl.style.color='var(--yellow)';badgeEl.style.borderColor='rgba(255,193,7,.3)';
+  }
+  badgeEl.style.display='inline-block';
+}
+
+function updateContactRankBadge(){
+  const badge=document.getElementById('contactRankBadge');
+  const cp=document.getElementById('filterContact').value.trim();
+  if(!cp){badge.style.display='none';return;}
+  if(!_allContactRanking.length) buildContactRanking();
+  _applyRankBadge(badge, _allContactRanking.findIndex(r=>r.name===cp), _allContactRanking.length);
+}
+
+function updateTeamRankBadge(){
+  const badge=document.getElementById('teamRankBadge');
+  const tm=document.getElementById('filterTeam').value.trim();
+  if(!tm){badge.style.display='none';return;}
+  if(!_allTeamRanking.length) buildContactRanking();
+  _applyRankBadge(badge, _allTeamRanking.findIndex(r=>r.name===tm), _allTeamRanking.length);
+}
+
+function updateBDRankBadge(){
+  const badge=document.getElementById('bdRankBadge');
+  const bd=document.getElementById('filterBD').value.trim();
+  if(!bd){badge.style.display='none';return;}
+  if(!rawData.length){badge.style.display='none';return;}
+  // 确定 BD 所属城市团队（取该 BD 名下第一条数据）
+  const bdRow=rawData.find(r=>r.bd_name===bd);
+  if(!bdRow){badge.style.display='none';return;}
+  const bdTeam=extractTeam(bdRow.contact_point, bdRow.city);
+  // 用与 renderBDRanking 右列相同的数据范围：该城市团队全量
+  const teamData=rawData.filter(r=>extractTeam(r.contact_point,r.city)===bdTeam);
+  // 按BD聚合均分
+  const map={};
+  teamData.forEach(r=>{
+    const name=r.bd_name||'未知';
+    if(!map[name]) map[name]={sum:0,count:0};
+    if(r.experience_score!=null){map[name].sum+=r.experience_score;map[name].count++;}
+  });
+  const sorted=Object.entries(map).map(([name,v])=>({name,avg:v.count?v.sum/v.count:0})).sort((a,b)=>b.avg-a.avg);
+  _applyRankBadge(badge, sorted.findIndex(r=>r.name===bd), sorted.length);
+}
+
+function renderTeamRanking(){
+  // 基于全量 _allTeamRanking，高分→低分，全部显示
+  if(!_allTeamRanking.length) buildContactRanking();
+  const list=_allTeamRanking;
+  const total=list.length;
+  const scoreColor=v=>v<90?'var(--red)':v<100?'var(--yellow)':'var(--green)';
+  const numCls=(i,total)=>{
+    if(i===0) return 'gold';
+    if(i===1) return 'silver';
+    if(i===2) return 'bronze';
+    if(i>=total-1) return 'bottom-rank';
+    return 'normal';
+  };
+  const el=document.getElementById('teamRankList');
+  if(!el) return;
+  el.innerHTML=list.map((item,i)=>`
+    <div class="rank-item">
+      <div class="rank-num ${numCls(i,total)}">${i+1}</div>
+      <div class="rank-name" title="${esc(item.name)}">${esc(item.name)}</div>
+      <div class="rank-score" style="color:${scoreColor(item.avg)}">${item.avg.toFixed(2)}</div>
+      <div class="rank-meta">🔴${item.red}家</div>
+    </div>`).join('');
+}
+
+/* ── BD排名 ── */
+function renderBDRanking(){
+  const scoreColor=v=>v<90?'var(--red)':v<100?'var(--yellow)':'var(--green)';
+  const numCls=(i,total)=>{
+    if(i===0) return 'gold'; if(i===1) return 'silver'; if(i===2) return 'bronze';
+    if(i>=total-1) return 'bottom-rank'; return 'normal';
+  };
+  const buildList=(data, container)=>{
+    // 按BD聚合
+    const map={};
+    data.forEach(r=>{
+      const bd=r.bd_name||'未知';
+      if(!map[bd]) map[bd]={sum:0,count:0,red:0,yellow:0};
+      if(r.experience_score!=null){map[bd].sum+=r.experience_score;map[bd].count++;}
+      if(r.alert_level==='red') map[bd].red++;
+      if(r.alert_level==='yellow') map[bd].yellow++;
+    });
+    const sorted=Object.entries(map).map(([name,v])=>({
+      name, avg:v.count?(v.sum/v.count):0, count:v.count, red:v.red, yellow:v.yellow
+    })).sort((a,b)=>b.avg-a.avg);
+    const total=sorted.length;
+    if(!total){
+      document.getElementById(container).innerHTML='<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px">暂无数据</div>';
+      return;
+    }
+    document.getElementById(container).innerHTML=sorted.map((item,i)=>`
+      <div class="bd-rank-item">
+        <div class="bd-rank-num ${numCls(i,total)}">${i+1}</div>
+        <div class="bd-rank-name" title="${esc(item.name)}">${esc(item.name)}</div>
+        <div class="bd-rank-score" style="color:${scoreColor(item.avg)}">${item.avg.toFixed(2)}</div>
+        <div class="bd-rank-meta">🔴${item.red} 🟡${item.yellow}</div>
+      </div>`).join('');
+  };
+
+  // 左列：当前 allData 范围内（受筛选影响，体现在联络点/BD范围内的排名）
+  buildList(allData, 'bdRankInContact');
+
+  // 右列：按城市团队聚合全量 rawData（不受BD/联络点筛选影响，只保留与当前城市团队一致的数据）
+  const cp=document.getElementById('filterContact').value.trim();
+  const team=document.getElementById('filterTeam').value.trim();
+  const city=document.getElementById('filterCity').value.trim();
+  // 找到当前筛选对应的城市团队
+  let targetTeam=team;
+  if(!targetTeam && cp){
+    // 从 rawData 里找这个联络点对应的城市团队
+    const found=rawData.find(r=>r.contact_point===cp);
+    if(found) targetTeam=extractTeam(found.contact_point, found.city);
+  }
+  if(!targetTeam && city){
+    // 只有城市筛选，取第一个联络点的团队
+    const found=rawData.find(r=>r.city===city);
+    if(found) targetTeam=extractTeam(found.contact_point, found.city);
+  }
+  if(targetTeam){
+    const teamData=rawData.filter(r=>extractTeam(r.contact_point,r.city)===targetTeam);
+    buildList(teamData, 'bdRankInTeam');
+  } else {
+    // 无筛选时展示全量BD排名
+    buildList(rawData, 'bdRankInTeam');
+  }
+}
+
+/* ── 视图切换 ── */
+function switchView(view){
+  ['overview','cqs','detail'].forEach(v=>{
+    const el=document.getElementById(`view-${v}`);
+    if(el) el.style.display=(v===view?'':'none');
+    const btn=document.getElementById(`vtab-${v}`);
+    if(btn) btn.classList.toggle('active',v===view);
+  });
+}
+
+function switchTab(tab){
+  curTab=tab; curPage=1;
+  ['all','red','yellow'].forEach(t=>{
+    const b=document.getElementById(`tab-${t}`);
+    b.className='tab-btn';
+    if(t===tab) b.classList.add(`active-${t}`);
+  });
+  applyTab(tab);
+}
+
+function applyTab(tab){
+  filteredData=tab==='red'?allData.filter(r=>r.alert_level==='red')
+    :tab==='yellow'?allData.filter(r=>r.alert_level==='yellow')
+    :allData;
+  document.getElementById('tableCountLabel').textContent=`（${filteredData.length.toLocaleString()} 家）`;
+  renderPage();
+}
+
+function renderPage(){
+  const s=(curPage-1)*PAGE_SIZE, rows=filteredData.slice(s,s+PAGE_SIZE);
+  const tp=Math.ceil(filteredData.length/PAGE_SIZE)||1;
+  document.getElementById('merchantTbody').innerHTML=rows.length===0
+    ?`<tr><td colspan="16" style="text-align:center;padding:40px;color:var(--text-muted)">暂无数据</td></tr>`
+    :rows.flatMap((r,i)=>{
+      const rank=s+i+1;
+      const sc=r.experience_score!=null?Number(r.experience_score).toFixed(2):'—';
+      const scCls=r.alert_level==='red'?'score-red':r.alert_level==='yellow'?'score-yellow':'score-green';
+      const badge=r.alert_level==='red'?'<span class="badge badge-red">🔴 预警</span>'
+        :r.alert_level==='yellow'?'<span class="badge badge-yellow">🟡 跟进</span>'
+        :'<span class="badge badge-green">✅ 正常</span>';
+      const dot=v=>v===1?'<span class="defeat-dot"></span>':'<span class="defeat-ok"></span>';
+      // 落败定义：子项得分 < 90 分
+      const fallCount=METRICS.filter(m=>isDefeated(r,m)).length;
+      const fallColor=fallCount>4?'var(--red)':fallCount>2?'var(--yellow)':'var(--text-primary)';
+      // 落败项数 badge（紧跟预警后）
+      const fallBadge=fallCount>0
+        ?`<span style="margin-left:4px;font-size:10px;font-weight:700;color:${fallColor};background:${fallCount>4?'rgba(244,67,54,.15)':fallCount>2?'rgba(255,193,7,.15)':'rgba(255,255,255,.07)'};border-radius:8px;padding:1px 6px">落败${fallCount}项</span>`
+        :'';
+      // 落败详情行（点击展开）
+      const defeatedMetrics=METRICS.filter(m=>isDefeated(r,m));
+      const detailRowId=`detail-row-${rank}`;
+      const detailHtml=defeatedMetrics.length===0
+        ?'<span style="color:var(--green)">✅ 无落败项</span>'
+        :defeatedMetrics.map(m=>{
+            const myScore=r[m.scoreKey];
+            const scoreStr=myScore!=null?Number(myScore).toFixed(1)+'分':'—';
+            // 原始业务值
+            const hasRaw=m.mtKey&&(r[m.mtKey]!=null||r[m.bKey]!=null);
+            const fmtRaw=(v,unit)=>{
+              if(v==null||v===''||v==='None') return '<span style="color:var(--text-muted)">—</span>';
+              // 热门菜 flag
+              if(unit===''&&(v===0||v===1||v==='0'||v==='1')) return v==1||v==='1'?'<span style="color:var(--green)">✅ 有</span>':'<span style="color:var(--red)">❌ 无</span>';
+              // 配送费（小数转元）
+              if(m.key==='f_delivery_fee'){const n=parseFloat(v);return isNaN(n)?v:`<span style="color:var(--yellow)">${(n).toFixed(2)}元</span>`;}
+              // 配送时效（小时）
+              if(m.key==='f_cashback_yz'){return `<span style="color:var(--yellow)">${v}</span>`;}
+              return `<span style="color:var(--yellow)">${v}${unit?unit:''}</span>`;
+            };
+            const mtVal=hasRaw?r[m.mtKey]:null;
+            const bVal=hasRaw?r[m.bKey]:null;
+            const rawBlock=hasRaw?`
+              <span style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px">
+                <span style="color:#42a5f5">🏪 我方：</span>${fmtRaw(mtVal,m.unit)}
+                <span style="color:var(--text-muted);margin:0 4px">vs</span>
+                <span style="color:#ef5350">🥊 对手：</span>${fmtRaw(bVal,m.unit)}
+              </span>`:'';
+            return `<div style="display:inline-flex;flex-direction:column;margin:3px 8px 3px 0;background:rgba(244,67,54,.1);border:1px solid rgba(244,67,54,.25);border-radius:8px;padding:6px 12px;font-size:12px;min-width:140px">
+              <span style="color:var(--text-muted);margin-bottom:2px">📍 ${m.label} · <span style="color:var(--red);font-weight:700">${scoreStr}</span></span>
+              ${rawBlock}
+            </div>`;
+          }).join('');
+      return [
+        `<tr style="cursor:pointer" onclick="toggleDetailRow('${detailRowId}')">
+          <td style="color:var(--text-muted);font-size:11px">${rank}</td>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.poi_name)}">${esc(r.poi_name||'—')}</td>
+          <td>${esc(r.contact_point||'—')}</td>
+          <td>${esc(r.bd_name||'—')}</td>
+          <td class="score-cell ${scCls}">${sc}</td>
+          <td>${badge}${fallBadge}</td>
+          ${METRICS.map(m=>{const defeated=isDefeated(r,m);const sc=r[m.scoreKey];const highlight=worst2Keys.includes(m.key)&&defeated?' style="background:rgba(244,67,54,.15)"':'';return `<td${highlight}>${sc!=null?sc.toFixed(1):'—'}</td>`;}).join('')}
+          <td style="font-weight:700;color:${fallColor}">${fallCount}</td>
+        </tr>`,
+        `<tr id="${detailRowId}" style="display:none">
+          <td colspan="16" style="padding:8px 16px 12px 40px;background:rgba(255,193,7,.04);border-bottom:1px solid var(--border)">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">📊 ${esc(r.poi_name||'')} · 落败详情</div>
+            <div style="display:flex;flex-wrap:wrap">${detailHtml}</div>
+          </td>
+        </tr>`
+      ];
+    }).join('');
+  document.getElementById('pageInfo').textContent=`第 ${curPage} / ${tp} 页，共 ${filteredData.length.toLocaleString()} 条`;
+  document.getElementById('btnPrev').disabled=curPage<=1;
+  document.getElementById('btnNext').disabled=curPage>=tp;
+}
+
+function toggleDetailRow(id){
+  const row=document.getElementById(id);
+  if(!row) return;
+  row.style.display=row.style.display==='none'?'table-row':'none';
+}
+
+function onScoreOpChange(){
+  const op=document.getElementById('dfScoreOp').value;
+  const v1=document.getElementById('dfScoreVal');
+  const v2=document.getElementById('dfScoreVal2');
+  const sep=document.getElementById('dfBetweenSep');
+  const unit=document.getElementById('dfScoreUnit');
+  v1.value=''; v2.value='';
+  if(!op){
+    v1.style.display='none'; v2.style.display='none';
+    sep.style.display='none'; unit.style.display='none';
+  } else if(op==='between'){
+    v1.style.display='inline-block'; sep.style.display='inline-block';
+    v2.style.display='inline-block'; unit.style.display='inline-block';
+  } else {
+    v1.style.display='inline-block'; unit.style.display='inline-block';
+    v2.style.display='none'; sep.style.display='none';
+  }
+  applyDetailFilter();
+}
+
+function applyDetailFilter(){
+  const op=document.getElementById('dfScoreOp')?.value||'';
+  const val=parseFloat(document.getElementById('dfScoreVal')?.value||'');
+  const val2=parseFloat(document.getElementById('dfScoreVal2')?.value||'');
+  const metric=document.getElementById('dfMetric')?.value||'';
+  // 基于 allData（已经受顶部筛选影响）再做二次过滤
+  const base=curTab==='red'?allData.filter(r=>r.alert_level==='red')
+    :curTab==='yellow'?allData.filter(r=>r.alert_level==='yellow')
+    :allData;
+  filteredData=base.filter(r=>{
+    const sc=r.experience_score!=null?Number(r.experience_score):null;
+    if(op==='lt' && !isNaN(val) && sc!=null && sc>=val) return false;
+    if(op==='gt' && !isNaN(val) && sc!=null && sc<=val) return false;
+    if(op==='between' && !isNaN(val) && !isNaN(val2) && sc!=null){
+      const lo=Math.min(val,val2), hi=Math.max(val,val2);
+      if(sc<lo || sc>hi) return false;
+    }
+    if(metric){ const m=METRICS.find(x=>x.key===metric); if(m && !isDefeated(r,m)) return false; }
+    return true;
+  });
+  curPage=1;
+  const cnt=document.getElementById('dfResultCount');
+  if(cnt) cnt.textContent=`筛选结果：${filteredData.length} 家`;
+  renderPage();
+}
+
+function clearDetailFilter(){
+  const op=document.getElementById('dfScoreOp');
+  const val=document.getElementById('dfScoreVal');
+  const val2=document.getElementById('dfScoreVal2');
+  const metric=document.getElementById('dfMetric');
+  if(op){op.value=''; onScoreOpChange();}
+  if(val2) val2.value='';
+  if(metric) metric.value='';
+  const cnt=document.getElementById('dfResultCount');
+  if(cnt) cnt.textContent='';
+  switchTab(curTab); // 恢复原始 filteredData
+}
+
+function changePage(d){
+  const tp=Math.ceil(filteredData.length/PAGE_SIZE)||1;
+  curPage=Math.max(1,Math.min(tp,curPage+d));
+  renderPage();
+  document.querySelector('.table-wrap').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+window.addEventListener('DOMContentLoaded', () => {
+  switchPage('experience');
+});
+</script>
+</body>
+</html>
